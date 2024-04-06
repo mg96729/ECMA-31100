@@ -1,0 +1,141 @@
+---
+title: "PS 1"
+output: html_document
+date: "2024-04-05"
+---
+Initialization
+```{r}
+setwd("D:/GitHub/ECMA-31100/PS 1")
+library(haven)
+library(dplyr)
+jtrain <- read_dta('jtrain98.dta')
+```
+
+##2 j
+We add the interaction terms into the regression:
+
+```{r}
+fo2 <- as.formula("earn98 ~ train + earn96 + educ + age + married + train * (earn96 + educ + age + married)")
+ols <- stats::lm(formula = fo2, data = jtrain)
+summary(ols)
+```
+We then construct our estimate for $\gamma_1$:
+```{r}
+A<- ols$coefficients[7:10]
+g <- ols$coefficients["train"]+colMeans(model.matrix(ols))[3:6] %*% A
+g
+```
+Now we get our variance estimate:
+```{r}
+#get V:
+v <- vcov(ols)
+v
+
+#set s:
+s <- c(0, 1, 0,0,0,0, colMeans(model.frame(ols))[2:5])
+theta <- s %*% v %*% s
+theta
+
+# get z-score
+z <- (sqrt(nrow(jtrain)))*g/(sqrt(theta))
+z
+```
+##2 n
+Here we implement the algorithm:
+```{r}
+#initialization
+N<- nrow(jtrain)
+L<-2000
+estimates <- c()
+
+for (i in 1:L){
+  draw <- jtrain[sample(N, N, replace=TRUE),]
+  ols2 <- stats::lm(formula = fo2, data = draw)
+  A<- ols2$coefficients[7:10]
+  g <- ols2$coefficients["train"]+colMeans(model.matrix(ols2))[3:6] %*% A
+  estimates <- append(estimates, g)
+}
+
+sd(estimates)
+sqrt(theta/N)
+```
+
+##4
+We now implement 2SLS and OGMM:
+```{r}
+#Initialization:
+install.packages("gmm")
+library(gmm)
+
+card <- read_dta('card.dta')
+#Y <- log(card$wage)
+N <- nrow(card)
+```
+
+Specification 1:
+```{r}
+#2SLS:
+m10 <- tsls(log(wage) ~ educ, ~ nearc4, data = card)
+#summary(m10)
+#m10$vcov
+m10$coefficients['educ']
+confint(m10, 'educ', level=0.95)
+
+
+#GMM:
+m11 <- gmm(log(wage) ~ educ, ~ nearc4, data = card)
+# summary(m11)
+# m11$vcov
+m11$coefficients['educ']
+confint(m11, 'educ', level=0.95)
+```
+Specification 2:
+```{r}
+#2SLS:
+m20 <- tsls(log(wage) ~ educ + south + smsa, ~ nearc4+ south + smsa, data = card)
+# summary(m20)
+# m20$vcov
+m20$coefficients['educ']
+confint(m20, 'educ', level=0.95)
+
+#GMM:
+m21 <- gmm(log(wage) ~ educ + south + smsa, ~ nearc4+ south + smsa, data = card)
+# summary(m21)
+# m21$vcov
+m21$coefficients['educ']
+confint(m21, 'educ', level=0.95)
+```
+Specification 3:
+```{r}
+#2SLS:
+m30 <- tsls(log(wage) ~ educ + south + smsa, ~ nearc4 + nearc2+ south + smsa, data = card)
+# summary(m30)
+# m30$vcov
+m30$coefficients['educ']
+confint(m30, 'educ', level=0.95)
+
+#GMM:
+m31 <- gmm(log(wage) ~ educ + south + smsa, ~ nearc4 + nearc2 + south + smsa, data = card)
+# summary(m31)
+# m31$vcov
+m31$coefficients['educ']
+confint(m31, 'educ', level=0.95)
+```
+Specification 4:
+```{r}
+#2SLS:
+m40 <- tsls(log(wage) ~ educ + south + smsa + libcrd14 + IQ + KWW + exper + expersq, ~ nearc4 + nearc2 + south + smsa + libcrd14 + IQ + KWW + exper + expersq, data = card)
+# summary(m40)
+# m40$vcov
+m40$coefficients['educ']
+confint(m40, 'educ', level=0.95)
+
+
+#GMM:
+m41 <- gmm(log(wage) ~ educ + south + smsa + libcrd14 + IQ + KWW + exper + expersq, ~ nearc4 + nearc2 + south + smsa + libcrd14 + IQ + KWW + exper + expersq, data = card)
+# summary(m41)
+# m41$vcov
+m41$coefficients['educ']
+confint(m41, 'educ', level=0.95)
+```
+

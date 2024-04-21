@@ -3,7 +3,9 @@ title: "PS 1"
 output: html_document
 date: "2024-04-05"
 ---
+
 Initialization
+
 ```{r}
 setwd("D:/GitHub/ECMA-31100/PS 1")
 library(haven)
@@ -11,21 +13,24 @@ library(dplyr)
 jtrain <- read_dta('jtrain98.dta')
 ```
 
-##2 j
-We add the interaction terms into the regression:
+##2 j We add the interaction terms into the regression:
 
 ```{r}
 fo2 <- as.formula("earn98 ~ train + earn96 + educ + age + married + train * (earn96 + educ + age + married)")
 ols <- stats::lm(formula = fo2, data = jtrain)
 summary(ols)
 ```
+
 We then construct our estimate for $\gamma_1$:
+
 ```{r}
 A<- ols$coefficients[7:10]
 g <- ols$coefficients["train"]+colMeans(model.matrix(ols))[3:6] %*% A
 g
 ```
+
 Now we get our variance estimate:
+
 ```{r}
 #get V:
 v <- vcov(ols)
@@ -40,8 +45,9 @@ theta
 z <- (sqrt(nrow(jtrain)))*g/(sqrt(theta))
 z
 ```
-##2 n
-Here we implement the algorithm:
+
+##2 n Here we implement the algorithm:
+
 ```{r}
 #initialization
 N<- nrow(jtrain)
@@ -60,11 +66,10 @@ sd(estimates)
 sqrt(theta/N)
 ```
 
-##4
-We now implement 2SLS and OGMM:
+##4 We now implement 2SLS and OGMM:
+
 ```{r}
 #Initialization:
-install.packages("gmm")
 library(gmm)
 
 card <- read_dta('card.dta')
@@ -73,6 +78,7 @@ N <- nrow(card)
 ```
 
 Specification 1:
+
 ```{r}
 #2SLS:
 m10 <- tsls(log(wage) ~ educ, ~ nearc4, data = card)
@@ -89,7 +95,9 @@ m11 <- gmm(log(wage) ~ educ, ~ nearc4, data = card)
 m11$coefficients['educ']
 confint(m11, 'educ', level=0.95)
 ```
+
 Specification 2:
+
 ```{r}
 #2SLS:
 m20 <- tsls(log(wage) ~ educ + south + smsa, ~ nearc4+ south + smsa, data = card)
@@ -105,7 +113,9 @@ m21 <- gmm(log(wage) ~ educ + south + smsa, ~ nearc4+ south + smsa, data = card)
 m21$coefficients['educ']
 confint(m21, 'educ', level=0.95)
 ```
+
 Specification 3:
+
 ```{r}
 #2SLS:
 m30 <- tsls(log(wage) ~ educ + south + smsa, ~ nearc4 + nearc2+ south + smsa, data = card)
@@ -121,7 +131,9 @@ m31 <- gmm(log(wage) ~ educ + south + smsa, ~ nearc4 + nearc2 + south + smsa, da
 m31$coefficients['educ']
 confint(m31, 'educ', level=0.95)
 ```
+
 Specification 4:
+
 ```{r}
 #2SLS:
 m40 <- tsls(log(wage) ~ educ + south + smsa + libcrd14 + IQ + KWW + exper + expersq, ~ nearc4 + nearc2 + south + smsa + libcrd14 + IQ + KWW + exper + expersq, data = card)
@@ -138,4 +150,3 @@ m41 <- gmm(log(wage) ~ educ + south + smsa + libcrd14 + IQ + KWW + exper + exper
 m41$coefficients['educ']
 confint(m41, 'educ', level=0.95)
 ```
-

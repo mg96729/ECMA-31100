@@ -1,0 +1,179 @@
+---
+title: "PS 4"
+output: html_document
+date: "2024-05-17"
+---
+
+Set-up:
+
+```{r}
+setwd("D:/GitHub/ECMA-31100/PS 4")
+install.packages("tidyverse")
+
+library(haven)
+#library(tidyverse)
+library(dplyr)
+
+#Download data
+data_set <- read_dta("401ksubs.dta")
+
+
+data_set <- data_set %>% mutate(age_minus = age - 25, agesq_minus = (age-25)^2)
+```
+
+First Column, OLS estimation:
+
+```{r}
+model_1 <- lm(nettfa ~ p401k + inc + age_minus + agesq_minus + marr + fsize ,data = data_set)
+
+summary(model_1)
+```
+
+First Column, 2SLS with Full sample:
+
+```{r}
+#By hand
+
+y <-  matrix(data_set$nettfa)
+
+x_data <-  c(rep(1,length(data_set$nettfa)), data_set$p401k, data_set$inc, data_set$age_minus,
+             data_set$agesq_minus, data_set$marr, data_set$fsize)
+
+
+x <- matrix(x_data, nrow= length(data_set$nettfa), ncol = 7) #Matrix of treatment and covariates
+
+beta_ols <- solve(t(x)%*%x)%*%t(x)%*%y
+
+u <- y - x%*%beta_ols #Compute residuals
+
+n <- length(data_set$nettfa)
+
+g <- x*as.vector(u)   # form matrix "g"
+S_hat <- t(g)%*%g/(n-7)   # sample variance of g  
+
+Avar_hat <- solve(t(x)%*%x/(n))%*%S_hat%*%solve(t(x)%*%x/(n)) #Variance Covarianze matrix
+
+se <- sqrt(diag(Avar_hat/n))  # robust standard errors
+
+
+```
+
+Second and Third Columns:
+
+```{r}
+y <-  matrix(data_set$nettfa)
+
+x_data <-  c(rep(1,length(data_set$nettfa)), data_set$p401k, data_set$inc, data_set$age_minus,
+             data_set$agesq_minus, data_set$marr, data_set$fsize)
+
+z_data <- c(rep(1,length(data_set$nettfa)), data_set$e401k, data_set$inc, data_set$age_minus,
+            data_set$agesq_minus, data_set$marr, data_set$fsize) #Selecting Data for z
+
+x <- matrix(x_data, nrow= length(data_set$nettfa), ncol = 7) #Matrix of treatment and covariates
+
+z <- matrix(z_data, nrow= length(data_set$nettfa), ncol = 7)
+
+beta_2sls <- solve(t(x)%*%z%*%solve(t(z)%*%z)%*%t(z)%*%x)%*%t(x)%*%z%*%solve(t(z)%*%z)%*%t(z)%*%y #2SLS
+
+#By stages
+
+first_stage <- solve(t(z)%*%z)%*%t(z)%*%x[,2]
+
+treat_hat <- z%*%first_stage
+
+x_2 <- x  
+
+x_2[,2] <- treat_hat  
+
+second_stage <- solve(t(x_2)%*%x_2)%*%t(x_2)%*%y
+
+
+
+#First Stage SE
+
+u <- x[,2] - z%*%first_stage #Compute residuals
+
+n <- length(data_set$nettfa)
+
+g <- z*as.vector(u)   # form matrix "g"
+S_hat <- t(g)%*%g/(n-7)   # sample variance of g  
+
+Avar_hat <- solve(t(z)%*%z/(n))%*%S_hat%*%solve(t(z)%*%z/(n)) #Variance Covarianze matrix
+
+se_1 <- sqrt(diag(Avar_hat/n))  # robust standard errors
+
+
+#Second Stage SE
+
+u <- y - x_2%*%second_stage #Compute residuals
+
+#For loop to calculate omega
+omega_temp <- 0
+for(i in 1:n){
+  omega_i <- u[i]^2*t(t(z[i,]))%*%t(z[i,])
+  omega_temp <- omega_temp+omega_i
+}
+
+omega <- omega_temp/(n-7)
+
+beta_omega <- solve(t(x)%*%z%*%solve(omega)%*%t(z)%*%x)%*%t(x)%*%z%*%solve(omega)%*%t(z)%*%y 
+
+v_he <- solve(((t(x)%*%z)/n)%*%solve(omega)%*%(t(z)%*%x)/n) #Compute Variance for the Heteroskedastic case
+
+se_2 <- sqrt(diag(v_he/n)) #Standard Errors for coefficient correspondent to treatment in Heteroskedastic case
+
+first_stage
+beta_2sls
+```
+
+Fourth Column
+
+```{r}
+
+logistic_reg <- glm(e401k ~ inc + as.factor(age_minus)*marr, data = data_set, family = binomial())
+
+# Create a new data frame with the desired range of income
+inc_values <- data.frame(inc = seq(min(data_set$inc), max(data_set$inc), by = 3))
+
+inc_values$age_minus <- 16
+
+inc_values$marr <- mean(data_set$marr)
+
+# Predict probabilities
+predicted_probabilities <- predict(logistic_reg, newdata = inc_values, type = "response")
+
+data_set$prob <- logistic_reg$fitted.values
+
+data_set <- data_set %>%  mutate(
+  kappa = 1 - ((p401k*(1-e401k))/(1-prob)) - ((1-p401k)*e401k/prob))
+
+#For tests
+
+i <- 1
+data <- data_set
+coeff_0 <- as.vector(beta_2sls)
+coeff <- coeff_0
+
+formula <- function(coeff, data){
+  sum <- 0
+  data <- as.matrix(data)
+ for(i in 1:n){
+   temp <- data[i,15]*(data[i,7]-coeff[2]*data[i,8]-sum(coeff[3:7]*data[i,c(2,12,13,3,6)])-coeff[1])^2
+   sum <- sum + temp
+ }
+   sum/n
+}
+
+
+formula(coeff_0, data_set)
+
+arg_min <- optim(par = coeff_0,
+                 fn = formula,
+                 data = data_set,
+                 method = "BFGS")
+
+
+arg_min$par
+
+
+```

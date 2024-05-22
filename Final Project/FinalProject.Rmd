@@ -1,0 +1,331 @@
+---
+title: "Final Project"
+output: html_document
+date: "2024-05-19"
+---
+Initial Setup
+```{r}
+setwd("D:/GitHub/ECMA-31100/Final Project")
+
+library(haven)
+library(tidyverse)
+library(dplyr)
+library(multiwayvcov)
+library(lmtest)
+library(strucchange)
+library(ivreg)
+library(ivmodel)
+library(rdrobust)
+library(clubSandwich)
+
+final4 <- read_dta("final4.dta")
+final5 <- read_dta("final5.dta")
+
+final4 <-
+  final4 %>% filter(verbsize !=0 ,
+                    mathsize != 0 ,
+                    c_leom == 1 ,
+                    c_pik < 3,
+                    1<classize,
+                    classize<45,
+                    c_size>5)
+
+final5 <-
+  final5 %>% filter(verbsize !=0 ,
+                    mathsize != 0 ,
+                    c_leom == 1 ,
+                    c_pik < 3,
+                    1<classize,
+                    classize<45,
+                    c_size>5)
+
+final4 <-
+  final4 %>% 
+    dplyr::mutate(
+        .data = final4,
+        avgverb= ifelse(avgverb>100, avgverb-100, avgverb),
+        avgmath= ifelse(avgmath>100, avgmath-100, avgmath),
+        predict_c = c_size/ceiling(c_size/40),
+        c_size2= (c_size^2)/100
+    )
+
+final5 <-
+  final5 %>% 
+    dplyr::mutate(
+        .data = final5,
+        avgverb= ifelse(avgverb>100, avgverb-100, avgverb),
+        avgmath= ifelse(avgmath>100, avgmath-100, avgmath),
+        predict_c = c_size/ceiling(c_size/40),
+        c_size2= (c_size^2)/100
+    )
+
+final4_d <-
+  final4 %>%filter((c_size>=36 & c_size<=45) |
+                    (c_size>=76& c_size<=85) |
+                    (c_size>=116& c_size<=125))
+final5_d <-
+  final5 %>%filter((c_size>=36 & c_size<=45) |
+                    (c_size>=76& c_size<=85) |
+                    (c_size>=116& c_size<=125))
+
+
+```
+
+Full Sample Regressions:
+1. Simple OLS (Table II in paper)
+```{r}
+#OLS for Verbal for 5th grade (column 1, 2, 3)
+ols1 <- lm(formula = avgverb ~ classize, data = final5)
+ols2 <- lm(formula = avgverb ~ classize + tipuach, data = final5)
+ols3 <- lm(formula = avgverb ~ classize + tipuach + c_size, data = final5)
+
+#OLS for Math for 5th grade (column 4, 5, 6)
+ols4 <- lm(formula = avgmath ~ classize, data = final5)
+ols5 <- lm(formula = avgmath ~ classize + tipuach, data = final5)
+ols6 <- lm(formula = avgmath ~ classize + tipuach + c_size, data = final5)
+
+#OLS for Verbal for 4th grade (column 7, 8, 9)
+ols7 <- lm(formula = avgverb ~ classize, data = final4)
+ols8 <- lm(formula = avgverb ~ classize + tipuach, data = final4)
+ols9 <- lm(formula = avgverb ~ classize + tipuach + c_size, data = final4)
+
+#OLS for Math for 4th grade (colmn 10, 11, 12)
+ols10 <- lm(formula = avgmath ~ classize, data = final4)
+ols11 <- lm(formula = avgmath ~ classize + tipuach, data = final4)
+ols12 <- lm(formula = avgmath ~ classize + tipuach + c_size, data = final4)
+
+
+# vcov_school <- cluster.vcov(ols1, final4$schlcode)
+# coeftest(ols40, vcov_school)
+
+
+# summary(ols40)
+# summary(ols41)
+# summary(ols42)
+
+# ols1s <- lm(formula = classize ~ predict_c, data = final4)
+# summary(ols1s)
+# anova(ols1s)
+
+```
+
+2. Reduced Form Estimation (Table III in paper)
+```{r}
+#For 5th Grade (Column 1-6)
+k <- 0
+for(y in c('classize', 'avgverb', 'avgmath')) {
+  for(x in c('1', 'c_size')){
+    k<-k+1
+    name <- paste("ols3", k, sep = "")
+    fo <- as.formula(paste(y, "~predict_c+tipuach+", x))
+    assign(name, lm(formula = fo, data = final5))
+  }
+}
+
+for(y in c('classize', 'avgverb', 'avgmath')) {
+  for(x in c('1', 'c_size')){
+    k<-k+1
+    name <- paste("ols3", k, sep = "")
+    fo <- as.formula(paste(y, "~predict_c+tipuach+", x))
+    assign(name, lm(formula = fo, data = final4))
+  }
+}
+```
+
+```{r}
+summary(ols36)
+```
+3. IV estimation for the Full Sample (From Table IV and V in paper)
+
+Verbal:
+```{r}
+rm(list=setdiff(ls(), c("final4","final5", 'final4_d', 'final5_d')))
+fo1 = "avgverb ~ classize + tipuach | predict_c + tipuach"
+fo2 = "avgverb ~ classize + tipuach + c_size | predict_c + tipuach + c_size"
+fo3 = "avgverb ~ classize + tipuach + c_size + c_size2 | predict_c + tipuach + c_size + c_size2"
+
+k <- 0
+for(fo in c(fo1, fo2, fo3)){
+  k<- k+1
+  name <- paste("full5_iv", k, sep = "")
+  assign(name, ivreg(formula = as.formula(fo), data = final5))
+}
+
+k<-0
+for(fo in c(fo1, fo2, fo3)){
+  k<- k+1
+  name <- paste("full4_iv", k, sep = "")
+  assign(name, ivreg(formula = as.formula(fo), data = final4))
+}
+
+k<-0
+for(fo in c(fo1, fo2)){
+  k<-k+1
+  name <- paste("dis5_iv", k, sep = "")
+  assign(name, ivreg(formula = as.formula(fo), data = final5_d))
+}
+
+k<-0
+for(fo in c(fo1, fo2)){
+  k<-k+1
+  name <- paste("dis4_iv", k, sep = "")
+  assign(name, ivreg(formula = as.formula(fo), data = final4_d))
+}
+
+```
+
+```{r}
+model <- dis4_iv2
+set <- final4_d
+model$coefficients
+diag(vcovCR(
+  model,
+  set$schlcode,
+  type = 'CR1p',
+  target = NULL,
+  inverse_var = FALSE,
+  form = "sandwich",
+))^(1/2)
+
+```
+Math:
+```{r}
+rm(list=setdiff(ls(), c("final4","final5", 'final4_d', 'final5_d')))
+fo1 = "avgmath ~ classize + tipuach | predict_c + tipuach"
+fo2 = "avgmath ~ classize + tipuach + c_size | predict_c + tipuach + c_size"
+fo3 = "avgmath ~ classize + tipuach + c_size + c_size2 | predict_c + tipuach + c_size + c_size2"
+
+k <- 0
+for(fo in c(fo1, fo2, fo3)){
+  k<- k+1
+  name <- paste("full5_iv", k, sep = "")
+  assign(name, ivreg(formula = as.formula(fo), data = final5))
+}
+
+k<-0
+for(fo in c(fo1, fo2, fo3)){
+  k<- k+1
+  name <- paste("full4_iv", k, sep = "")
+  assign(name, ivreg(formula = as.formula(fo), data = final4))
+}
+
+k<-0
+for(fo in c(fo1, fo2)){
+  k<-k+1
+  name <- paste("dis5_iv", k, sep = "")
+  assign(name, ivreg(formula = as.formula(fo), data = final5_d))
+}
+
+k<-0
+for(fo in c(fo1, fo2)){
+  k<-k+1
+  name <- paste("dis4_iv", k, sep = "")
+  assign(name, ivreg(formula = as.formula(fo), data = final4_d))
+}
+
+```
+
+```{r}
+model <- dis4_iv2
+set <- final4_d
+model$coefficients
+diag(vcovCR(
+  model,
+  set$schlcode,
+  type = 'CR1p',
+  target = NULL,
+  inverse_var = FALSE,
+  form = "sandwich",
+))^(1/2)
+
+```
+
+
+
+4. Anderson-Rubin
+Sample Construction
+```{r}
+final4_high <- final4 %>% filter(c_size > 115)
+final5_high <- final5 %>% filter(c_size > 115)
+final4_high_d <- final4 %>% filter((c_size > 115 & 126>c_size)|(c_size > 155 & 166>c_size)|(c_size > 195 & 206>c_size))
+final5_high_d <- final5 %>% filter((c_size > 115 & 126>c_size)|(c_size > 155 & 166>c_size)|(c_size > 195 & 206>c_size))
+```
+
+Verbal:
+```{r}
+set <- final5_high_d
+
+fo1 = "avgverb ~ classize + tipuach | predict_c + tipuach"
+fo2 = "avgverb ~ classize + tipuach + c_size | predict_c + tipuach + c_size"
+fo3 = "avgverb ~ classize + tipuach + c_size + c_size2 | predict_c + tipuach + c_size + c_size2"
+
+k <- 0
+for(fo in c(fo1, fo2, fo3)){
+  k<- k+1
+  namet <- paste('ivLt', k, sep='')
+  #assign(nameiv, ivreg(formula = as.formula(fo), data = set))
+  assign(namet, ivmodelFormula(formula = as.formula(fo),clusterID = set$schlcode, data = set))
+}
+```
+
+```{r}
+summary(ivLt2)
+
+```
+
+Math:
+```{r}
+set <- final4_high_d
+fo1 = "avgmath ~ classize + tipuach | predict_c + tipuach"
+fo2 = "avgmath ~ classize + tipuach + c_size | predict_c + tipuach + c_size"
+fo3 = "avgmath ~ classize + tipuach + c_size + c_size2 | predict_c + tipuach + c_size + c_size2"
+
+k <- 0
+for(fo in c(fo1, fo2, fo3)){
+  k<- k+1
+  namet <- paste("ivL", k, sep = "")
+  assign(namet, ivmodelFormula(formula = as.formula(fo),clusterID = set$schlcode, data = set))
+}
+```
+
+```{r}
+summary(ivL2)
+```
+
+```{r}
+summary(ivL3)
+#AR.test(ivL3, beta0 = 0, alpha = 0.05)
+```
+
+```{r}
+ds <- final4
+plot(ds$c_size, (ds$classize), type = 'p', col = 'blue', 
+     xlab = 'cohort size', xaxt = 'n', ylab = 'class size')
+points(ds$c_size, ds$predict_c, col = 'red')
+axis(side=1, at=c(0, 40, 80, 120, 160, 200))
+legend('bottomright', legend = c('Actual', 'Predicted'), col = c('blue', 'red'), lty = 1)
+```
+
+```{r}
+plot(final4$c_size, (final4$tipuach), type = 'p', col = 'blue', 
+     xlab = 'cohort size', xaxt = 'n', ylab = 'Percent Disadvantaged')
+points(final5$c_size, final5$tipuach, col = 'red')
+axis(side=1, at=c(0, 40, 80, 120, 160, 200))
+legend('topright', legend = c('4th Grade', '5th Grade'), col = c('blue', 'red'), lty = 1)
+```
+
+```{r}
+```
+
+
+```{r}
+ds <- final4
+ds <-
+  ds %>% 
+    dplyr::mutate(
+        .data = ds,
+        treat = 1*()
+    )
+
+rdbwselect(ds$classize, ds$c_size, ds$(1*(classize <20)  c = 40, fuzzy, masspoints = 'adjust')
+```
